@@ -27,22 +27,8 @@ data Value
     = String BS.ByteString
     | Number Int
     | List [Value]
---    -- XXX: use a hashmap like aeson?
     | Dictionary (Map Value Value)
-    deriving (Eq, Ord)
-
-instance Show Value where
-    show v = showInd 0 v
-        where
-            showInd :: Int -> Value -> String
-            showInd n (Number m) = (concat (replicate n "  ")) ++ show m
-            showInd n (String bs) = (concat (replicate n "  ")) ++ show bs
-            showInd n v =
-                case v of
-                    List v -> concat (replicate n "  ") ++ "[\n" ++ concatMap (\v -> showInd (n+1) v ++ ",\n") v ++ "\n]"
-                    Dictionary d -> concat (replicate n "  ") ++ "{\n" 
-                        ++ concatMap (\(k,v) -> showInd (n+1) k ++ ": " ++ showInd 0 v ++ ",\n") (Map.toList d)
-                        ++ "\n}"
+    deriving (Eq, Ord, Show)
 
 asciiNum :: Int -> BS.ByteString
 asciiNum = ASCII.pack . show
@@ -160,12 +146,3 @@ instance FromBencode Value where
 
 unbencode :: FromBencode a => BS.ByteString -> Either String a
 unbencode = (fromBencode =<<) . decode
-
---class ToBencode a where
---    toBencode :: a -> Value
---
---class FromBencode a where
---    fromBencode :: Value -> Either String a
---
---instance ToBencode a => ToBencode [a] where
---    toBencode ls = List $ map toBencode ls

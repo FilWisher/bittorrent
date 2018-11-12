@@ -9,6 +9,9 @@ import qualified Data.ByteString as BS
 
 -- XXX: BitField should track its length as the entire byte might not be valid.
 
+-- | Represents a bitfield of arbitrary length. The bitfield uses a ByteString
+--   as short as possible to represent bits. Bitwise operations implicitly pad
+--   bitfields of different lengths with 0s.
 newtype BitField = BitField { unwrap :: BS.ByteString }
     deriving (Eq)
 
@@ -23,7 +26,6 @@ instance Show BitField where
             showbits n byte
                 | n < 0     = ""
                 | otherwise = bool '0' '1' (testBit byte n) : showbits (n-1) byte
-    
 
 bitwise :: (Word8 -> Word8 -> Word8) -> BS.ByteString -> BS.ByteString -> BS.ByteString
 bitwise fn as bs
