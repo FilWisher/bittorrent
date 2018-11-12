@@ -1,0 +1,82 @@
+name:           bittorrent
+version:        0.1.0.0
+description:    A bittorrent client implemented for fun
+homepage:       https://github.com/FilWisher
+bug-reports:    https://github.com/FilWisher/bittorrent
+author:         William Fisher
+Maintainer:     williamsykesfisher@gmail.com
+copyright:      2018 William Fisher
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
+extra-source-files:
+    ChangeLog.md
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/bittorrent
+
+library
+  exposed-modules:      Lib
+                      , Data.Bencode
+                      , Data.BitField
+                      , BitTorrent.Monad
+                      , BitTorrent.Action
+                      , BitTorrent.Protocol
+                      , BitTorrent.Services
+                      , BitTorrent.StateMachine
+  other-modules:        Paths_bittorrent
+  hs-source-dirs:       src
+  build-depends:        base >=4.7 && <5
+                      , bytestring
+                      , text
+                      , cereal
+                      , attoparsec
+                      , unordered-containers
+                      , containers
+                      , vector
+                      , hashable
+                      , network
+                      , mtl
+                      , exceptions
+                      , stm
+                      , directory
+                      , lens
+                      , async
+                      , monad-logger
+                      , random
+                      , cryptonite
+                      , memory
+                      , http-types
+                      , http-client
+                      , http-client-tls
+  default-language:     Haskell2010
+
+-- executable bittorrent-exe
+--   main-is:              Main.hs
+--   other-modules:        Paths_bittorrent
+--   hs-source-dirs:       app
+--   ghc-options:          -threaded -rtsopts -with-rtsopts=-N
+--   build-depends:        base >=4.7 && <5
+--                       , bittorrent
+--   default-language:     Haskell2010
+
+test-suite bittorrent-test
+  type:                 exitcode-stdio-1.0
+  main-is:              Spec.hs
+  other-modules:        Paths_bittorrent
+                      , Data.Bencode.Test
+                      , Data.BitField.Test
+                      , Data.BitTorrent.Message.Test
+                      , Data.BitTorrent.Actions.Test
+  hs-source-dirs:       test
+  ghc-options:          -threaded -rtsopts -with-rtsopts=-N
+  build-depends:        base >=4.7 && <5
+                      , bittorrent
+                      , bytestring
+                      , QuickCheck
+                      , cereal
+                      , hspec
+  default-language:     Haskell2010
