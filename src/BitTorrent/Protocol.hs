@@ -106,11 +106,15 @@ protocol = "BitTorrent protocol"
 
 instance Serialize Handshake where
     put (Handshake infohash peerid) = do
+        S.putWord8 (fromIntegral $ BS.length protocol)
         S.putByteString protocol
+        S.putWord64be 0
         S.putByteString infohash
         S.putByteString peerid
     get = do
-        str <- S.getByteString (BS.length protocol)
+        len <- S.getWord8
+        str <- S.getByteString (fromIntegral len)
+        S.getWord64be
         guard (str == protocol)
         Handshake <$> S.getByteString 20 <*> S.getByteString 20
 

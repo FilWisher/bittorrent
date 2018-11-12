@@ -55,6 +55,7 @@ newtype BitTorrentM a = BitTorrentM
         , MonadReader Config
         , MonadState StateMachine
         , MonadThrow
+        , MonadCatch
         , MonadLogger
         , MonadIO
         )
@@ -93,7 +94,15 @@ update (IncomingSocket socket) = do
     configId <$> ask >>= incomingHandshake socket
 update (OutgoingSocket infohash socket) = do
     logDebugN ("Outgoing socket for: " <> (T.pack . show $ infohash))
-    configId <$> ask >>= outgoingHandshake socket infohash
+    selfid <- configId <$> ask
+    handle onError $ do
+        outgoingHandshake socket infohash selfid
+        logInfoN "Successful handshake"
+    where
+        onError :: HandshakeParseError -> BitTorrentM ()
+        onError (HandshakeParseError err) = do
+            logDebugN (T.pack $ "BitTorrent.Monad.HandshakeParseError: " ++ show err)
+        
 update (HandshakeComplete infohash peerid socket) = do
     logDebugN ("Handshake complete with peer: " <> (T.pack $ show peerid))
     ch <- configChan <$> ask
@@ -143,7 +152,6 @@ update (Connect port ip) = do
     case maddr of
         Nothing -> logDebugN "Could not resolve"
         Just addr -> do
-            logInfoN (T.pack $ "resolved: " ++ show addr)
             socket <- liftIO $ NS.socket (NS.addrFamily addr) (NS.addrSocketType addr) (NS.addrProtocol addr)
             ms <- liftIO $ flip timeout 1000000 $
                 try (NS.connect socket $ NS.addrAddress addr)
