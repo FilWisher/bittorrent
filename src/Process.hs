@@ -6,7 +6,10 @@
 
 module Process
     ( Process(..)
+    , Forkable(..)
     , runProcess
+    , evalProcess
+    , evalProcessAsync
     ) where
 
 import Control.Monad.State
@@ -34,12 +37,26 @@ newtype Process c s a = Process
         , MonadCatch
         )
 
-runProcess :: c -> s -> Process c s a -> IO (a, s)
+runProcess :: MonadIO m => c -> s -> Process c s a -> m (a, s)
 runProcess config state proc =
-    runStateT (runReaderT (unProcess proc) config) state
+    liftIO $ runStateT (runReaderT (unProcess proc) config) state
+
+evalProcess :: MonadIO m => c -> s -> Process c s a -> m a
+evalProcess config state proc =
+    liftIO $ fst <$> runStateT (runReaderT (unProcess proc) config) state
+
+evalProcessAsync :: MonadIO m => c -> s -> Process c s a -> m (Async a)
+evalProcessAsync config state proc =
+    liftIO $ async (evalProcess config state proc)
 
 forkProcess :: Process c s a -> Process c s (Async (a, s))
 forkProcess proc = do
     conf <- ask
     state <- get
     liftIO $ async (runProcess conf state proc)
+
+class Forkable m where
+    forkM :: m a -> m (Async a)
+
+instance Forkable (Process c s) where
+    forkM = (fmap fst <$>) . forkProcess
