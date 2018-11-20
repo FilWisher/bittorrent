@@ -3,13 +3,13 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Process
     ( Process(..)
     , Forkable(..)
     , runProcess
-    , evalProcess
-    , evalProcessAsync
+    , runProcessAsync
     ) where
 
 import Control.Monad.State
@@ -23,40 +23,46 @@ import Control.Concurrent.Async
 
 import System.Random
 
-newtype Process c s a = Process
-    { unProcess :: ReaderT c (StateT s IO) a
+newtype Process c a = Process
+    { unProcess :: ReaderT c IO a
     }
     deriving
         ( Functor
         , Applicative
         , Monad
-        , MonadState s
         , MonadReader c
         , MonadIO
         , MonadThrow
         , MonadCatch
         )
 
-runProcess :: MonadIO m => c -> s -> Process c s a -> m (a, s)
-runProcess config state proc =
-    liftIO $ runStateT (runReaderT (unProcess proc) config) state
+class HasTVar a env | env -> a where
+    getTVar :: env -> TVar a
 
-evalProcess :: MonadIO m => c -> s -> Process c s a -> m a
-evalProcess config state proc =
-    liftIO $ fst <$> runStateT (runReaderT (unProcess proc) config) state
+instance HasTVar s c => MonadState s (Process c) where
+    state f = do
+        tvar <- getTVar <$> ask
+        liftIO . atomically $ do
+            st <- readTVar tvar
+            let (v, st') = f st
+            writeTVar tvar st'
+            return v
 
-evalProcessAsync :: MonadIO m => c -> s -> Process c s a -> m (Async a)
-evalProcessAsync config state proc =
-    liftIO $ async (evalProcess config state proc)
+runProcess :: MonadIO m => c -> Process c a -> m a
+runProcess config proc =
+    liftIO $ runReaderT (unProcess proc) config
 
-forkProcess :: Process c s a -> Process c s (Async (a, s))
+runProcessAsync :: MonadIO m => c -> Process c a -> m (Async a)
+runProcessAsync config proc =
+    liftIO $ async (runProcess config proc)
+
+forkProcess :: Process c a -> Process c (Async a)
 forkProcess proc = do
     conf <- ask
-    state <- get
-    liftIO $ async (runProcess conf state proc)
+    liftIO $ async (runProcess conf proc)
 
 class Forkable m where
     forkM :: m a -> m (Async a)
 
-instance Forkable (Process c s) where
-    forkM = (fmap fst <$>) . forkProcess
+instance Forkable (Process c) where
+    forkM = forkProcess

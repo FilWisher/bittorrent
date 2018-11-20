@@ -13,7 +13,7 @@ import qualified Data.ByteString as BS
 --   as short as possible to represent bits. Bitwise operations implicitly pad
 --   bitfields of different lengths with 0s.
 newtype BitField = BitField { unwrap :: BS.ByteString }
-    deriving (Eq)
+    deriving (Eq, Ord)
 
 instance Show BitField where
     show (BitField as) = "BitField " ++ showbytes (BS.unpack as)

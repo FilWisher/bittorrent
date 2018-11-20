@@ -2,6 +2,7 @@
 
 module BitTorrent.Connection
     ( Connection(..)
+    , Node(..)
     , closeConnection
     , createConnection
     , transitionConnection
@@ -23,6 +24,10 @@ data Node = Node
     , interested :: Bool
     }
 
+instance Show Node where
+    show (Node choked interested) =
+        "Node{choked=" <> show choked <> ",interested=" <> show interested <> "}"
+
 -- | Represents an open connection to a peer.
 data Connection = Connection
     -- | The pieces the peer (probably) has.
@@ -40,7 +45,9 @@ data Connection = Connection
     }
 
 instance Show Connection where
-    show _ = "Connection{..}"
+    show Connection{..} =
+        "Connection{self=" <> show connSelf <> ",peer=" <> show connPeer <> "}"
+        
 
 -- | Spawns a listening action in a thread and return a Connection handle.
 createConnection :: NS.Socket -> NodeID -> IO () -> IO Connection
@@ -48,8 +55,8 @@ createConnection sock peerid fn = do
     thread <- async fn
     return $ Connection
         { connPieces = zeroBits
-        , connSelf   = Node False False
-        , connPeer   = Node False False
+        , connSelf   = Node True False
+        , connPeer   = Node True False
         , connSocket = sock
         , connThread = thread
         , connId     = peerid

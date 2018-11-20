@@ -41,6 +41,8 @@ import Data.List (find)
 import BitTorrent.Protocol
 import BitTorrent.Connection
 
+import Control.Arrow ((&&&))
+
 type PiecePool = V.Vector (Maybe BS.ByteString)
 
 extractFile :: PiecePool -> BS.ByteString
@@ -82,7 +84,7 @@ initialState :: Int -> InfoHash -> [(Word16, Word32)] -> StateMachine
 initialState len infohash peers =
     StateMachine 
         HM.empty 
-        zeroBits 
+        (foldr (.|.) zeroBits (map bit [0..len]))
         zeroBits 
         (V.replicate len Nothing) 
         (Set.fromList peers) 
@@ -138,6 +140,7 @@ transition (EvMessageReceived peerid msg) st@StateMachine{..} = st
 transition (EvNewPiece idx _ buf) st@StateMachine{..} = st
     { stateMachinePiecePool = stateMachinePiecePool V.// [(fromIntegral idx, Just buf)]
     , stateMachineNeed = stateMachineNeed .&. (complement . bit $ fromIntegral idx)
+    , stateMachineOpenRequests = stateMachineOpenRequests .&. (complement . bit $ fromIntegral idx)
     }
 transition (EvRequest idx) st@StateMachine{..} = st
     { stateMachineOpenRequests = setBit stateMachineOpenRequests (fromIntegral idx)
@@ -161,14 +164,11 @@ prioritizePieces n st =
 -- | Return a pool of connections that can satisfy requests for pieces in need.
 connectionPool :: BitField -> StateMachine -> [Connection]
 connectionPool need st =
-    filter ((>0) . popCount . (.|.) need . connPieces) (allConnections st)
+    filter ((>0) . popCount . (.&.) need . connPieces) (allConnections st)
 
 -- | Match the pieces in need with connections able to satisfy them.
-matchPieceConnection :: BitField -> [Connection] -> [(Int, Maybe Connection)]
+matchPieceConnection :: BitField -> [Connection] -> [(BitField, Connection)]
 matchPieceConnection need conns =
-    -- XXX: this is not particularly efficient (O(NM) where N is number of
-    -- bits, M is number of connections).
-    map (\n -> (n,) $ find (canServe n) conns) (bits need)
+    filter (nonZero . fst) $ map ((&&&) ((need .&.) . connPieces) id) conns
     where
-        canServe :: Int -> Connection -> Bool
-        canServe n conn = testBit (connPieces conn) n
+        nonZero = (> zeroBits)

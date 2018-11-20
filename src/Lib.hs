@@ -14,6 +14,8 @@ import Control.Applicative (liftA2)
 import Crypto.Hash
 
 import Control.Monad
+import Control.Monad.State
+import Control.Monad.Reader
 import Control.Monad.Catch
 import Control.Monad.Logger
 import Control.Monad.IO.Class
@@ -26,14 +28,20 @@ import           Data.Bits
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Serialize as S
 import           Data.ByteArray (convert)
 
+import qualified Network.Socket as NS
 import Network.Socket (hostAddressToTuple)
 
+import Process
+
+import BitTorrent.StateMachine
 import BitTorrent.Protocol
 import BitTorrent.Monad
 import BitTorrent.Action
+import BitTorrent.Services
 
 import System.Random
 
@@ -64,33 +72,10 @@ getInfoHash (Dictionary d) = case Map.lookup (String "info") d of
 getPieces :: Value -> IO [BS.ByteString]
 getPieces _ = return []
 
-someFunc :: IO ()
-someFunc = do
-    einfo <- decode <$> BS.readFile "/home/william/src/bittorrent/slackware.torrent"
-    print einfo
-    case einfo of
-        Left err -> print einfo
-        Right info -> do
-            peers <- getPeers info
-            infohash <- getInfoHash info
-            pieces <- getPieces info
-            ch <- newTChanIO
-            runBitTorrentM (length pieces) infohash peers ch $ do
-                liftIO $ async $ forever $ do
-                    threadDelay 1000000
-                    atomically $ writeTChan ch Tick
-                loop ch
+nThreads :: Int
+nThreads = 5
 
-loop :: TChan Action -> BitTorrentM ()
-loop ch = do
-    logDebugN "HI"
-    action <- liftIO . atomically $ readTChan ch
-    logDebugN . T.pack $ show action
-    update action
-    loop ch
-
-
-torrentFile :: FilePath -> IO ()
+torrentFile :: FilePath -> IO [Async ()]
 torrentFile path = do
     let node = ("-FW" <> B8.replicate 17 '0')
     print (BS.length node)
@@ -107,31 +92,73 @@ torrentFile path = do
         Right (TrackerResponseError err) -> error (B8.unpack err)
         Right r -> return r
 
-    ch <- newTChanIO
-
-    -- Start the ticker (every 1 second)
-    liftIO $ async $ forever $ do
-        threadDelay 1000000
-        atomically $ writeTChan ch Tick
-
     runBitTorrentM
         (length $ infoPieces $ torrentInfo file)
         (torrentInfoHash file)
         (unwrapPeers $ responsePeers resp)
-        ch
-        (loop ch)
+        (spawn nThreads)
 
     where
-        loop :: TChan Action -> BitTorrentM ()
-        loop ch = do
+        spawn :: Int -> BitTorrentM [Async ()]
+        spawn n = do
+            t <- forkM ticker
+            s <- forkM (createServer "6881")
+            ts <- replicateM n (forkM loop)
+            return (s:t:ts)
+
+        ticker :: BitTorrentM ()
+        ticker = do
+            ch <- configChan <$> ask
+            forever $ do
+                liftIO $ threadDelay 5000000
+                logDebugN "Creating Tick"
+                liftIO . atomically $ writeTChan ch Tick
+
+        loop :: BitTorrentM ()
+        loop = do
+            tid <- liftIO (myThreadId)
+            ch <- configChan <$> ask
             action <- liftIO . atomically $ readTChan ch
-            logDebugN . T.pack $ show action
+            logDebugN . T.pack $ show tid <> ": " <> show action
+            logDebugN . T.pack $ show tid <> ": LOOP"
             update action
-            loop ch
+            st <- stateMachineConnections <$> get
+            loop
 
 
+cancelAll :: [Async a] -> IO ()
+cancelAll = mapM_ cancel
 
-    
+createServer :: String -> BitTorrentM ()
+createServer port = do
+    socket <- liftIO $ open =<< resolve port
+    loop socket
+    where
+        resolve :: String -> IO NS.AddrInfo
+        resolve port = do
+            let hints = NS.defaultHints
+                  { NS.addrFlags = [NS.AI_PASSIVE]
+                  , NS.addrSocketType = NS.Stream
+                  }
+            addr:_ <- NS.getAddrInfo (Just hints) Nothing (Just port)
+            return addr
+        open :: NS.AddrInfo -> IO NS.Socket
+        open addr = do
+            socket <- NS.socket (NS.addrFamily addr) (NS.addrSocketType addr) (NS.addrProtocol addr)
+            NS.setSocketOption socket NS.ReuseAddr 1
+            NS.bind socket (NS.addrAddress addr)
+            NS.listen socket 10
+            return socket
+        loop :: NS.Socket -> BitTorrentM ()
+        loop sock = forever $ do
+            (conn, peer) <- liftIO $ NS.accept sock
+            forkM (handleConnection conn)
+
+        handleConnection :: NS.Socket -> BitTorrentM ()
+        handleConnection socket = do
+            logDebugN "Received connection"
+            emit (IncomingSocket socket)
+
     
 --    -- d <- decode <$> BS.readFile "/home/william/src/bittorrent/test.ben"
 --    case d of

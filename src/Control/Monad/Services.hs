@@ -25,9 +25,6 @@ class TransportTCP m where
     sendTCP    :: NS.Socket -> BS.ByteString -> m ()
     recvTCP    :: NS.Socket -> m BS.ByteString
 
-class EventEmitter m a where
-    emit :: a -> m ()
-
 data TransportTCPException
     = TCPIOException IOException
     | TCPUserError String

@@ -13,8 +13,6 @@ data Action
     = IncomingSocket NS.Socket
     -- | Fires when a new outgoing TCP socket is opened.
     | OutgoingSocket InfoHash NS.Socket
-    -- | Fires when a handshake is complete and a connection is established.
-    | HandshakeComplete InfoHash NodeID NS.Socket
     -- | Fires when a connection is closed or times out.
     | ConnectionClosed NodeID
     -- | Fires when the connection to peer id receives a message.
