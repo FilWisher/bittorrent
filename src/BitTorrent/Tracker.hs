@@ -4,6 +4,7 @@
 module BitTorrent.Tracker where
 
 import Control.Applicative (liftA2)
+import Control.Exception
 
 import Network.Socket
 import Network.HTTP.Client
@@ -26,14 +27,22 @@ import Data.Word
 import Text.Read (readEither)
 import Network.HTTP.Types (urlEncode)
 
-request :: TrackerRequest -> IO (Either String TrackerResponse)
+data DecodeError = DecodeError String deriving (Show)
+instance Exception DecodeError
+
+request :: TrackerRequest -> IO (Either DecodeError TrackerResponse)
 request tr = do
     mgr <- newManager tlsManagerSettings
-    print (formatTrackerRequest tr)
     req <- parseRequest (B8.unpack $ formatTrackerRequest tr)
     res <- httpLbs req mgr
-    print (responseBody res)
-    return $ (fromBencode =<<) . decode . BSL.toStrict $ responseBody res
+    return (decodeBody res)
+    where
+        decodeBody =
+            either (Left . DecodeError) Right 
+                . (fromBencode =<<) 
+                . decode 
+                . BSL.toStrict 
+                . responseBody
 
 -- Split a ByteString into a stream of ByteStrings of length `n`
 chunksOf :: Int -> BS.ByteString -> [BS.ByteString]
@@ -118,7 +127,7 @@ data TrackerRequest = TrackerRequest
     , requestUploaded   :: Int
     , requestDownloaded :: Int
     , requestEvent      :: Maybe TrackerEvent
-    , requestKey        :: BS.ByteString
+    -- , requestKey        :: BS.ByteString
     , requestPort       :: Word16
     }
     deriving (Show)
@@ -132,7 +141,7 @@ formatTrackerRequest TrackerRequest{..} = requestURL <> "?" <> BS.intercalate "&
     , "uploaded"   .> showB8 requestUploaded
     , "downloaded" .> showB8 requestDownloaded
     , "event"      .>? (showB8 <$> requestEvent)
-    , "key"        .> requestKey
+    -- , "key"        .> requestKey
     , "port"       .> showB8 requestPort
     ]
     where
@@ -148,6 +157,8 @@ formatTrackerRequest TrackerRequest{..} = requestURL <> "?" <> BS.intercalate "&
         showB8 :: Show a => a -> BS.ByteString
         showB8 = B8.pack . show
 
+data TrackerError = TrackerError BS.ByteString deriving (Show)
+instance Exception TrackerError
 
 data TrackerResponse
     = TrackerResponseError
@@ -229,23 +240,23 @@ sha1 :: BS.ByteString -> BS.ByteString
 sha1 = convert . (hash :: (BS.ByteString -> Digest SHA1))
 
 data TorrentFile = TorrentFile
-    { torrentInfo     :: TorrentInfo
-    , torrentInfoHash :: BS.ByteString
-    , torrentAnnounce :: BS.ByteString
+    { torrentFileInfo     :: TorrentInfo
+    , torrentFileInfoHash :: BS.ByteString
+    , torrentFileAnnounce :: BS.ByteString
     }
     deriving (Show)
 
 -- | Create a TrackerRequest request from a TorrentFile
-createRequest :: NodeID -> BS.ByteString -> Maybe TrackerEvent -> Word16 -> TorrentFile -> TrackerRequest
-createRequest peerid key ev port TorrentFile{..} = TrackerRequest
-    { requestURL = torrentAnnounce
-    , requestInfoHash = torrentInfoHash
-    , requestLeft = calculateLength (infoFile torrentInfo)
+createRequest :: NodeID -> Maybe TrackerEvent -> Word16 -> TorrentFile -> TrackerRequest
+createRequest peerid ev port TorrentFile{..} = TrackerRequest
+    { requestURL = torrentFileAnnounce
+    , requestInfoHash = torrentFileInfoHash
+    , requestLeft = calculateLength (infoFile torrentFileInfo)
     , requestPeerID = peerid
     , requestUploaded = 0
     , requestDownloaded = 0
     , requestEvent = ev
-    , requestKey = key
+    -- , requestKey = key
     , requestPort = port
     }
     where
@@ -280,7 +291,7 @@ testRequest = TrackerRequest
     , requestUploaded   = 0
     , requestDownloaded = 0
     , requestEvent      = Just Started
-    , requestKey        = "192837465"
+    -- , requestKey        = "192837465"
     , requestPort       = 6881
     }
 

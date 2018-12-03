@@ -149,6 +149,7 @@ createServer port = do
             NS.bind socket (NS.addrAddress addr)
             NS.listen socket 10
             return socket
+
         loop :: NS.Socket -> BitTorrentM ()
         loop sock = forever $ do
             (conn, peer) <- liftIO $ NS.accept sock
